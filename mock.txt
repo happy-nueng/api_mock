@@ -1,0 +1,17 @@
+POST /api/v1/user
+{
+	"name": "test",
+	"password": "123456"
+}
+###
+GET /api/v1/user
+{
+	"id": 1,
+	"name": "test",
+	"password": "123456"
+}
+###
+DELETE /api/v1/user
+{
+	"id": 1
+}
