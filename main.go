@@ -2,17 +2,17 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type Mock struct {
-	Method   string
-	Url      string
-	Response interface{}
+	Body   string
+	Method string
+	Path   string
 }
 
 func main() {
@@ -26,26 +26,34 @@ func main() {
 
 	for _, v := range mock {
 		m := Convert(v)
-		fmt.Println(m.GetMethod(), m.GetUrl())
-		app.Add(m.GetMethod(), m.GetUrl(), func(c *fiber.Ctx) error {
-			return c.JSON(m.GetResponse())
+		app.Add(m.GetMethod(), m.GetPath(), func(c *fiber.Ctx) error {
+			c.Accepts("application/json")
+			body, err := m.GetBody()
+			if err != nil {
+				return err
+			}
+			return c.JSON(body)
 		})
 	}
-
+	r := app.GetRoutes()
+	for _, v := range r {
+		println(v.Method, " ", v.Path)
+	}
 	app.Listen(":8080")
 }
 
 func Convert(mock string) Mock {
+	re := regexp.MustCompile(`([A-Z]+)\s+([^ \n]+)`)
 	m := Mock{}
 	mock = strings.TrimSpace(mock)
-	mocks := strings.Split(mock, "\n")
+	matches := re.FindStringSubmatch(mock)
 
-	mm := strings.Split(strings.TrimSpace(mocks[0]), " ")
+	m.Method = strings.TrimSpace(matches[1])
+	m.Path = strings.TrimSpace(matches[2])
+	body := strings.Replace(mock, m.Method, "", 1)
+	body = strings.Replace(body, m.Path, "", 1)
+	m.Body = strings.TrimSpace(body)
 
-	m.Method = strings.TrimSpace(mm[0])
-	m.Url = strings.TrimSpace(mm[1])
-	jsonText := strings.TrimSpace(strings.Join(mocks[1:], "\n"))
-	json.Unmarshal([]byte(jsonText), &m.Response)
 	return m
 }
 
@@ -53,10 +61,15 @@ func (m *Mock) GetMethod() string {
 	return m.Method
 }
 
-func (m *Mock) GetUrl() string {
-	return m.Url
+func (m *Mock) GetPath() string {
+	return m.Path
 }
 
-func (m *Mock) GetResponse() interface{} {
-	return m.Response
+func (m *Mock) GetBody() (interface{}, error) {
+	var body interface{}
+	err := json.Unmarshal([]byte(m.Body), &body)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
 }
