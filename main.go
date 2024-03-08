@@ -2,11 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/gofiber/fiber/v2"
+	"github.com/spf13/viper"
 )
 
 type Mock struct {
@@ -15,14 +20,44 @@ type Mock struct {
 	Path   string
 }
 
+type Config struct {
+	Port     int
+	MockFile string
+}
+
+const (
+	purple    = lipgloss.Color("99")
+	gray      = lipgloss.Color("245")
+	lightGray = lipgloss.Color("241")
+)
+
 func main() {
-	content, err := os.ReadFile("mock.txt")
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	if err := viper.ReadInConfig(); err != nil {
+		log.Printf("Error reading config file, %s", err)
+		viper.SetDefault("port", 8080)
+		viper.SetDefault("mockfile", "mock.txt")
+	}
+
+	conf := Config{}
+	err := viper.Unmarshal(&conf)
 	if err != nil {
-		panic(err)
+		log.Fatalf("unable to decode into struct, %v", err)
+		return
+	}
+
+	content, err := os.ReadFile(conf.MockFile)
+	if err != nil {
+		log.Fatalf("unable to read file, %v", err)
+		return
 	}
 
 	mock := strings.Split(string(content), "###")
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+	})
 
 	for _, v := range mock {
 		m := Convert(v)
@@ -36,10 +71,34 @@ func main() {
 		})
 	}
 	r := app.GetRoutes()
+	rows := [][]string{}
 	for _, v := range r {
-		println(v.Method, " ", v.Path)
+		rows = append(rows, []string{v.Method, v.Path})
 	}
-	app.Listen(":8080")
+	re := lipgloss.NewRenderer(os.Stdout)
+	var (
+		HeaderStyle  = re.NewStyle().Foreground(purple).Bold(true).Align(lipgloss.Center)
+		CellStyle    = re.NewStyle().Padding(0, 1).Width(14)
+		OddRowStyle  = CellStyle.Copy().Foreground(gray)
+		EvenRowStyle = CellStyle.Copy().Foreground(lightGray)
+	)
+	t := table.New().
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			switch {
+			case row == 0:
+				return HeaderStyle
+			case row%2 == 0:
+				return EvenRowStyle
+			default:
+				return OddRowStyle
+			}
+		}).
+		Headers("Method", "Path").
+		Rows(rows...)
+	fmt.Println(t)
+	app.Listen(fmt.Sprintf(":%v", conf.Port))
 }
 
 func Convert(mock string) Mock {
